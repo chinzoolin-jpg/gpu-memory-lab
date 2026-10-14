@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#080f20">
+  <meta name="description" content="GPU Memory Lab：透過互動模擬理解深度學習訓練中 Retain、Offload 和 Recompute 的記憶體與時間取捨。">
+  <title>GPU Memory Lab｜互動式 Tensor Offloading 實驗室</title>
+  <style>
+    :root { color-scheme: dark; --bg:#080f20; --panel:#111c32; --panel2:#16243e; --edge:#2b3a56; --muted:#93a7c5; --text:#f2f6ff; --aqua:#41d9cf; --blue:#75b6ff; --violet:#ba99ff; --amber:#ffd182; --red:#ff8894; }
+    *,*::before,*::after{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{margin:0;min-height:100vh;background:radial-gradient(ellipse 85% 600px at 52% -240px,#254576 0,transparent 75%),var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI","Noto Sans TC",sans-serif;line-height:1.55}
+    button,input{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible{outline:3px solid var(--aqua);outline-offset:3px}
+    .wrap{max-width:1300px;margin:0 auto;padding:28px 26px 60px}
+    .topline{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:40px}
+    .brand{display:flex;align-items:center;gap:12px;font-weight:850;letter-spacing:.11em;font-size:15px}
+    .brandmark{height:36px;width:36px;border:1px solid #3d807e;border-radius:11px;display:grid;place-items:center;background:linear-gradient(135deg,#1a595b,#132742);color:var(--aqua);font-weight:900;font-size:20px}
+    .badge{border:1px solid #355371;background:#15273f;padding:7px 12px;border-radius:100px;font-size:12px;color:#bbd8f7;white-space:nowrap}
+    .hero{margin:0 0 30px;max-width:910px}
+    .eyebrow{color:var(--aqua);font-size:12px;font-weight:800;letter-spacing:.22em;text-transform:uppercase;margin-bottom:9px}
+    h1{font-size:clamp(33px,5.2vw,62px);letter-spacing:-.055em;line-height:1.15;margin:0 0 12px;font-weight:840}
+    h1 span{background:linear-gradient(100deg,#52e5d8,#9db6ff);color:transparent;background-clip:text}
+    .subtitle{color:#a8bad5;font-size:15px;max-width:790px;margin:0}
+    .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}
+    .stat{background:rgba(19,32,55,.93);border:1px solid var(--edge);border-radius:16px;padding:18px 18px 15px;min-width:0}
+    .stat .label{color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:6px;align-items:center}
+    .stat strong{display:block;font-size:clamp(20px,2.2vw,28px);font-weight:800;line-height:1.3;margin:9px 0 2px;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .stat small{font-size:11px;color:#93a8c3}
+    .stat .muted-unit{font-size:13px;color:#a8bbd3;font-weight:600}
+    .dot{height:8px;width:8px;border-radius:50%;display:inline-block;background:var(--aqua)}
+    .layout{display:grid;grid-template-columns:minmax(280px,330px) minmax(0,1fr);gap:18px;align-items:start}
+    .panel{background:rgba(16,28,49,.94);border:1px solid var(--edge);border-radius:19px;overflow:hidden}
+    .panel-inner{padding:20px}
+    .panel-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px}
+    h2{font-size:17px;margin:0;font-weight:780;letter-spacing:-.02em}
+    h3{font-size:14px;margin:0;font-weight:750}
+    .small-tag{font-size:11px;background:#213654;color:#a9c7eb;border-radius:100px;padding:4px 9px}
+    .field{margin:0 0 23px}
+    .field-title{display:flex;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:8px;color:#dce9fc}
+    .field-title output{font-weight:770;color:var(--aqua);font-variant-numeric:tabular-nums}
+    input[type=range]{width:100%;height:6px;margin:9px 0 4px;appearance:none;background:#334562;border-radius:99px;accent-color:var(--aqua)}
+    input[type=range]::-webkit-slider-thumb{appearance:none;width:17px;height:17px;border:3px solid #a5fff7;background:#0c6471;border-radius:50%;box-shadow:0 0 0 3px #153a53}
+    .range-labels{display:flex;justify-content:space-between;font-size:11px;color:#8195b2}
+    .split-line{height:1px;background:var(--edge);margin:6px 0 22px}
+    .strategies{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .strategy{border:1px solid #344664;background:#172640;color:#cadaf1;padding:12px 9px;text-align:left;border-radius:12px;min-height:76px;transition:background .2s,border-color .2s;display:flex;flex-direction:column;justify-content:center}
+    .strategy:hover{background:#213552;border-color:#5582a4}
+    .strategy.active{background:#153f4a;border-color:var(--aqua);box-shadow:inset 0 0 0 1px #287b77}
+    .strategy .strategy-name{font-size:13px;font-weight:750}
+    .strategy .strategy-hint{font-size:11px;color:#98abc4;margin-top:3px}
+    .help{font-size:12px;color:#91a9c9;margin:11px 0 22px;min-height:54px}
+    .btn{border:1px solid #43597b;color:#e4efff;border-radius:11px;background:#223450;padding:11px 13px;font-weight:720;transition:transform .13s,background .13s}
+    .btn:hover:not(:disabled){background:#30486a;transform:translateY(-1px)}
+    .btn:disabled{cursor:not-allowed;opacity:.5}
+    .btn-primary{background:linear-gradient(110deg,#4be2d3,#84e2ff);color:#073343;border:0}
+    .btn-primary:hover:not(:disabled){background:linear-gradient(110deg,#79f8e4,#b2efff)}
+    .buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .buttons .btn:first-child{grid-column:span 2}
+    .scenario{margin-top:22px;padding:15px;border:1px dashed #425b7b;border-radius:13px;background:#13233b}
+    .scenario p{color:#9ab0cf;font-size:12px;margin:5px 0 12px}
+    .scenario-row{display:flex;gap:7px;flex-wrap:wrap}
+    .mini-btn{border:1px solid #42577b;background:#1b2b49;color:#c5dbf2;border-radius:9px;padding:7px 10px;font-size:12px}
+    .mini-btn:hover{border-color:#60beb5;color:white}
+    .right-column{display:grid;gap:18px;min-width:0}
+    .workbench-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:15px;flex-wrap:wrap}
+    .status{display:inline-flex;align-items:center;gap:7px;font-size:12px;border-radius:30px;padding:6px 10px;background:#173d3b;color:#95f6da;border:1px solid #24615c}
+    .status.error{background:#4a2634;border-color:#8e4055;color:#ffb0b8}
+    .status.done{background:#2c3b65;color:#bdd1ff;border-color:#4e6696}
+    .intro-card{display:grid;grid-template-columns:auto 1fr;gap:13px;align-items:start;padding:14px;background:#172944;border:1px solid #304664;border-radius:13px;margin-bottom:18px}
+    .intro-icon{background:#24545c;border-radius:9px;height:33px;width:33px;display:grid;place-items:center;color:var(--aqua);font-size:17px}
+    .intro-card strong{font-size:14px}
+    .intro-card p{font-size:12px;color:#9eb4d3;margin:3px 0 0}
+    .memory-grids{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .memory-card{padding:15px;border-radius:14px;background:#0d172b;border:1px solid #263952;min-width:0}
+    .memory-label{display:flex;align-items:center;justify-content:space-between;font-size:12px;margin-bottom:12px;gap:8px}
+    .memory-label strong{font-size:13px}
+    .memory-label span{color:#98afcd;font-variant-numeric:tabular-nums}
+    .memory-track{height:23px;background:#24344e;border-radius:6px;display:flex;overflow:hidden;position:relative;border:1px solid #324969}
+    .memory-part{height:100%;min-width:0;transition:width .3s ease}
+    .part-model{background:#4d85c9}
+    .part-active{background:linear-gradient(90deg,#39c4b8,#89eee0);border-left:1px solid #0d172b}
+    .memory-track.empty-track{background:repeating-linear-gradient(135deg,#1a2b45 0 8px,#20324d 8px 16px)}
+    .key{display:flex;flex-wrap:wrap;gap:13px;font-size:11px;color:#9fb0c9;margin-top:11px}
+    .key span{display:flex;align-items:center;gap:5px}
+    .key i{width:8px;height:8px;border-radius:2px;display:inline-block}
+    .layer-label{color:#93a7c5;font-size:12px;margin:17px 0 8px}
+    .tokens{display:flex;flex-wrap:wrap;gap:7px;min-height:38px}
+    .token{display:inline-flex;align-items:center;gap:5px;border-radius:8px;border:1px solid #375473;padding:7px 9px;background:#1d3552;color:#c6e2fd;font-size:12px;white-space:nowrap}
+    .token.gpu{border-color:#35968f;background:#163b43;color:#94f1de}
+    .token.cpu{border-color:#647fc2;background:#27365b;color:#c1d0ff}
+    .token.discarded{border-color:#63517e;background:#302849;color:#d7bbff}
+    .token.done{opacity:.52}
+    .tokens em{font-style:normal;color:#6f87a8;font-size:12px;padding:7px 0}
+    .timeline-caption{display:flex;justify-content:space-between;font-size:12px;color:#a7bad5;margin:20px 0 8px}
+    .timeline{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:5px}
+    .time-chip{border:1px solid #37506e;border-radius:6px;height:29px;display:grid;place-items:center;font-size:11px;background:#1a2a43;color:#8b9fbd;position:relative;cursor:pointer}
+    .time-chip.fwd.filled{background:#1d6b69;border-color:#47bfb7;color:#e4fffd}
+    .time-chip.bwd.filled{background:#51437e;border-color:#a28ada;color:#f3ebff}
+    .time-chip.current{outline:2px solid #ecfaff;outline-offset:2px}
+    .time-chip:hover{filter:brightness(1.23)}
+    .time-chip:disabled{cursor:not-allowed;opacity:.45}
+    .legend-note{font-size:11px;color:#7189a9;margin-top:8px}
+    .chart-title{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+    .chart-title small{font-size:11px;color:#8ea8c8}
+    .chart-area{position:relative;padding:12px 10px 10px;height:155px;background:#0d172a;border-radius:12px;border:1px solid #273850;display:flex;flex-direction:column;justify-content:flex-end}
+    .chart-area::before{content:"";position:absolute;top:30%;left:10px;right:10px;border-top:1px dashed #344960;pointer-events:none}
+    .bars{height:113px;display:flex;gap:7px;align-items:end;position:relative;z-index:1}
+    .bar-wrap{height:100%;flex:1;display:flex;align-items:end;justify-content:center;position:relative}
+    .bar{width:min(100%,35px);background:linear-gradient(0deg,#258e8b,#55dfd4);border-radius:5px 5px 0 0;min-height:2px;transition:height .25s}
+    .bar.bwd{background:linear-gradient(0deg,#5f57a4,#b29bff)}
+    .bar.current{box-shadow:0 0 0 2px #ecfaff}
+    .bar.failed{background:linear-gradient(0deg,#b34c5c,#ff9ca4)}
+    .axis{display:flex;justify-content:space-between;margin-top:5px;font-size:11px;color:#8199b7}
+    .notes{border-top:1px solid var(--edge);padding-top:15px;margin-top:17px;font-size:12px;color:#9db1cc}
+    .compare-header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+    .compare-header p{font-size:12px;color:#9db1cc;margin:0}
+    .table-scroll{overflow-x:auto}
+    table{width:100%;border-collapse:collapse;text-align:left;white-space:nowrap;font-size:12px}
+    th{text-transform:uppercase;letter-spacing:.06em;font-size:10px;color:#8ea5c5;font-weight:730;padding:10px 9px;border-bottom:1px solid #34506b}
+    td{padding:11px 9px;border-bottom:1px solid #263850;font-variant-numeric:tabular-nums}
+    tbody tr{cursor:pointer;transition:background .18s}
+    tbody tr:hover{background:#203252}
+    tbody tr.selected{background:#153e46}
+    tbody tr:last-child td{border-bottom:0}
+    .result-good{color:#76e5c6}.result-bad{color:#ff99a3}
+    .pill-kind{display:inline-block;padding:3px 8px;border-radius:7px;background:#233755;font-weight:750;color:#d5eaff}
+    .selected .pill-kind{background:#20515b;color:#adf5e9}
+    .footer{margin-top:24px;font-size:12px;color:#819ab8;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+    @media(max-width:980px){.layout{grid-template-columns:1fr}.control-panel .panel-inner{display:block}.stats{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:560px){.wrap{padding:18px 13px 45px}.topline{padding-bottom:30px}.badge{white-space:normal;text-align:right;font-size:10px}.stat{padding:14px}.stat strong{font-size:21px}.memory-grids{grid-template-columns:1fr}.panel-inner{padding:16px}.timeline{gap:3px}.time-chip{font-size:9px;height:25px}.intro-card{gap:9px}.subtitle{font-size:13px}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="topline">
+      <div class="brand"><span class="brandmark" aria-hidden="true">G</span><span>GPU MEMORY LAB</span></div>
+      <span class="badge">互動式教學模擬 · 單一 HTML</span>
+    </header>
+    <main>
+      <section class="hero" aria-labelledby="main-title">
+        <div class="eyebrow">LEARN BY EXPERIMENTING</div>
+        <h1 id="main-title">GPU 記憶體，<span>該怎麼省？</span></h1>
+        <p class="subtitle">在深度學習訓練中，Activation 要留在 GPU、搬到 CPU，還是需要時重新計算？親手調整顯存、Batch Size 與傳輸頻寬，觀察記憶體與時間的取捨。</p>
+      </section>
+      <section class="stats" aria-label="模擬數值摘要">
+        <div class="stat"><div class="label">GPU 峰值需求 <span class="dot" aria-hidden="true"></span></div><strong id="stat-peak">—</strong><small>含 OOM 時的預估需求</small></div>
+        <div class="stat"><div class="label">CPU 目前保存</div><strong id="stat-cpu">—</strong><small>已 Offload 的 Activation</small></div>
+        <div class="stat"><div class="label">總傳輸資料量</div><strong id="stat-data">—</strong><small>GPU ↔ CPU 累計</small></div>
+        <div class="stat"><div class="label">累積估計時間</div><strong id="stat-time">—</strong><small>包含計算與未重疊傳輸</small></div>
+      </section>
+      <div class="layout">
+        <aside class="panel control-panel" aria-labelledby="control-heading">
+          <div class="panel-inner">
+            <div class="panel-title"><h2 id="control-heading">實驗控制台</h2><span class="small-tag">01 / 設定</span></div>
+            <div class="field">
+              <label for="vram" class="field-title"><span>GPU 顯存上限</span><output id="vram-value" for="vram">8 GB</output></label>
+              <input id="vram" type="range" min="5" max="16" step="0.5" value="8">
+              <div class="range-labels"><span>5 GB</span><span>16 GB</span></div>
+            </div>
+            <div class="field">
+              <label for="batch" class="field-title"><span>Batch Size（相對尺度）</span><output id="batch-value" for="batch">2×</output></label>
+              <input id="batch" type="range" min="1" max="4" step="1" value="2">
+              <div class="range-labels"><span>1×</span><span>4×</span></div>
+            </div>
+            <div class="field">
+              <label for="bandwidth" class="field-title"><span>CPU–GPU 傳輸頻寬</span><output id="bandwidth-value" for="bandwidth">16 GB/s</output></label>
+              <input id="bandwidth" type="range" min="4" max="32" step="4" value="16">
+              <div class="range-labels"><span>4 GB/s</span><span>32 GB/s</span></div>
+            </div>
+            <div class="split-line"></div>
+            <div class="panel-title"><h2>Activation 管理策略</h2><span class="small-tag">02 / 選擇</span></div>
+            <div class="strategies" role="group" aria-label="Activation 管理策略">
+              <button class="strategy" type="button" data-policy="retain" aria-pressed="false"><span class="strategy-name">▣ 全部保留</span><span class="strategy-hint">Retain / 最快</span></button>
+              <button class="strategy active" type="button" data-policy="offload" aria-pressed="true"><span class="strategy-name">⇄ 搬移到 CPU</span><span class="strategy-hint">Offload / 省顯存</span></button>
+              <button class="strategy" type="button" data-policy="recompute" aria-pressed="false"><span class="strategy-name">↻ 重新計算</span><span class="strategy-hint">Recompute / 省傳輸</span></button>
+              <button class="strategy" type="button" data-policy="adaptive" aria-pressed="false"><span class="strategy-name">✧ 智慧混合</span><span class="strategy-hint">Adaptive / 動態選擇</span></button>
+            </div>
+            <p class="help" id="policy-help">在後續 Forward 已使用上一層輸出後，將不必繼續保留的 Activation 搬到 CPU；Backward 前再取回。</p>
+            <div class="buttons">
+              <button id="play" class="btn btn-primary" type="button">▶ 自動播放</button>
+              <button id="step" class="btn" type="button">下一步 →</button>
+              <button id="reset" class="btn" type="button">↺ 重設</button>
+            </div>
+            <div class="scenario">
+              <h3>快速對照實驗</h3>
+              <p>相同顯存與 Batch Size，只換策略，觀察是否發生 OOM。</p>
+              <div class="scenario-row"><button class="mini-btn" id="demo-oom" type="button">情境 A：全部保留</button><button class="mini-btn" id="demo-save" type="button">情境 B：Offload</button></div>
+            </div>
+          </div>
+        </aside>
+        <div class="right-column">
+          <section class="panel" aria-labelledby="sim-heading">
+            <div class="panel-inner">
+              <div class="workbench-header"><h2 id="sim-heading">訓練步驟模擬器</h2><span id="sim-status" class="status" role="status" aria-live="polite"><span class="dot" aria-hidden="true"></span> 尚未開始</span></div>
+              <div class="intro-card" aria-live="polite"><span class="intro-icon" aria-hidden="true">✦</span><div><strong id="step-head">準備開始 6 層模型的訓練</strong><p id="step-description">點擊「下一步」觀察 Forward → Backward，共 12 個計算步驟；也可以自動播放。</p></div></div>
+              <div class="memory-grids">
+                <div class="memory-card">
+                  <div class="memory-label"><strong>GPU VRAM</strong><span id="gpu-used">3.2 / 8 GB</span></div>
+                  <div class="memory-track" id="gpu-track" aria-label="GPU 記憶體占用"><div class="memory-part part-model" id="model-block"></div><div class="memory-part part-active" id="activation-block"></div></div>
+                  <div class="key"><span><i style="background:#4d85c9"></i>模型狀態 3.2 GB</span><span><i style="background:#43d1c4"></i>Activation</span></div>
+                </div>
+                <div class="memory-card">
+                  <div class="memory-label"><strong>CPU DRAM</strong><span id="cpu-used">0 GB</span></div>
+                  <div class="memory-track empty-track" id="cpu-track" aria-label="CPU 中已卸載的 Activation"><div class="memory-part" id="cpu-block" style="background:linear-gradient(90deg,#6d76b2,#b9a7ff)"></div></div>
+                  <div class="key"><span><i style="background:#9185da"></i>Offloaded Activations</span><span>容量不設限</span></div>
+                </div>
+              </div>
+              <p class="layer-label">各層 Activation 目前位置</p>
+              <div class="tokens" id="layer-tokens" aria-label="各層 Activation 狀態"></div>
+              <div class="timeline-caption"><span>Forward　→</span><span>←　Backward</span></div>
+              <div class="timeline" id="timeline" aria-label="訓練進度，可點擊已執行步驟回看"></div>
+              <div class="legend-note">青綠色＝Forward　·　紫色＝Backward　·　點選已完成步驟可回看</div>
+              <div class="notes" id="live-note">教學假設：模型狀態固定占 3.2 GB；每層 Activation 在對應 Backward 使用後釋放。</div>
+            </div>
+          </section>
+          <section class="panel" aria-labelledby="chart-heading"><div class="panel-inner">
+            <div class="chart-title"><h2 id="chart-heading">GPU 峰值使用量趨勢</h2><small>各步驟執行時最高占用（GB）</small></div>
+            <div class="chart-area"><div class="bars" id="chart-bars" role="img" aria-label="每個步驟 GPU 使用記憶體的長條圖"></div><div class="axis"><span>FWD 1</span><span>FWD 6</span><span>BWD 1</span></div></div>
+          </div></section>
+          <section class="panel" aria-labelledby="compare-heading"><div class="panel-inner">
+            <div class="compare-header"><h2 id="compare-heading">四種策略即時比較</h2><p>相同硬體設定 · 點擊任一列切換</p></div>
+            <div class="table-scroll"><table><thead><tr><th scope="col">策略</th><th scope="col">峰值需求</th><th scope="col">搬移量</th><th scope="col">估計總時間</th><th scope="col">訓練結果</th></tr></thead><tbody id="compare-body"></tbody></table></div>
+          </div></section>
+        </div>
+      </div>
+    </main>
+    <footer class="footer"><span>GPU MEMORY LAB · Vibe Coding 互動網頁實作</span><span>教育用簡化模型；不代表實際 GPU profiling 結果</span></footer>
+  </div>
+  <script>
+    (() => {
+      'use strict';
+      const N = 6;
+      const BASE = 3.2;
+      const SIZES = [0.75, 1.05, 1.25, 1.45, 1.10, 0.85];
+      const FWD = [38, 44, 53, 61, 49, 41];
+      const BWD = [57, 65, 78, 94, 72, 61];
+      const LABELS = ['Conv 1', 'Block 2', 'Block 3', 'Block 4', 'Block 5', 'Head 6'];
+      const POLICY_TEXT = {
+        retain: '所有 Activation 留在 GPU，省下傳輸與重新計算時間，但顯存容易不足。',
+        offload: '在後續 Forward 已使用上一層輸出後，將不必繼續保留的 Activation 搬到 CPU；Backward 前再取回。',
+        recompute: '在後續 Forward 已使用上一層輸出後，捨棄暫時不用的 Activation；Backward 前以額外計算重新產生。',
+        adaptive: '依顯存壓力選擇保留或移除 Activation；移除時以簡化成本模型在 Offload 與 Recompute 間選擇。'
+      };
+      const POLICY_NAMES = {retain:'Retain',offload:'Offload',recompute:'Recompute',adaptive:'Adaptive'};
+      const $ = (id) => document.getElementById(id);
+      const round = (n, d=1) => Number(n).toFixed(d);
+      const sizesFor = (batch) => SIZES.map(n => n*batch/2);
+      const total = (xs) => xs.reduce((a,b)=>a+b,0);
+      const fmt = (n) => `${round(n)} GB`;
+      const ms = (n) => `${Math.round(n).toLocaleString('en-US')} ms`;
+      const loadPrefs = () => {
+        try { const p = JSON.parse(localStorage.getItem('gpuMemoryLabPrefs') || '{}'); return {
+          vram: [5,16].includes(Number(p.vram)) || (Number(p.vram)>=5 && Number(p.vram)<=16) ? Number(p.vram) : 8,
+          batch: [1,2,3,4].includes(Number(p.batch)) ? Number(p.batch) : 2,
+          bandwidth: Number(p.bandwidth)>=4 && Number(p.bandwidth)<=32 && Number(p.bandwidth)%4===0 ? Number(p.bandwidth) : 16,
+          policy: POLICY_NAMES[p.policy] ? p.policy : 'offload'
+        }; } catch { return {vram:8,batch:2,bandwidth:16,policy:'offload'}; }
+      };
+      let settings = loadPrefs();
+      let history = [];
+      let cursor = 0;
+      let playTimer = null;
+      function savePrefs(){ try{localStorage.setItem('gpuMemoryLabPrefs', JSON.stringify(settings));}catch{} }
+      function buildTrace(policy, cfg){
+        const sz = sizesFor(cfg.batch);
+        const where = Array(N).fill('none');
+        const trace = [];
+        let elapsed=0, transfer=0, recompute=0, data=0, peak=BASE, failed=false;
+        const usedGPU = () => BASE+total(where.map((p,i)=>p==='gpu'?sz[i]:0));
+        const usedCPU = () => total(where.map((p,i)=>p==='cpu'?sz[i]:0));
+        const snapshot = (stage, title, description, stepPeak, ended=false) => {
+          peak = Math.max(peak,stepPeak);
+          trace.push({stage,title,description,location:where.slice(),gpu:usedGPU(),cpu:usedCPU(),stepPeak,peak,elapsed,transfer,recompute,data,failed,ended});
+        };
+        snapshot(0,'準備開始 6 層模型的訓練','點擊「下一步」觀察 Forward → Backward，共 12 個計算步驟；也可以自動播放。',BASE);
+        for(let i=0;i<N;i++){
+          const n=i+1;
+          const predicted=usedGPU()+sz[i];
+          if(predicted>cfg.vram+1e-8){
+            failed=true;
+            snapshot(i+1,`OOM！Forward ${n} 無法執行`,`需要 ${fmt(predicted)}，超過 GPU 上限 ${fmt(cfg.vram)}。試著調大顯存、減小 Batch Size，或改用 Offload / Recompute。`,predicted,true);
+            return trace;
+          }
+          elapsed+=FWD[i];
+          where[i]='gpu';
+          let description=`第 ${n} 層完成 Forward，產生 ${fmt(sz[i])} 的 Activation，並留在 GPU 供下一層使用。`;
+          if(i>0){
+            const prev=i-1;
+            const candidate = [];
+            if(policy==='offload' || policy==='recompute') candidate.push(prev);
+            if(policy==='adaptive'){
+              // Keep the latest layer's output for the next Forward; evict only completed, older outputs.
+              const target=Math.max(BASE+sz[i], cfg.vram*.66);
+              for(let j=0;j<i && usedGPU()>target+1e-8;j++){
+                if(where[j]==='gpu') candidate.push(j);
+                // The candidate is actually removed in the loop below, keeping the target check conservative.
+              }
+              // Pre-emptively keep room for the next Forward if possible.
+              if(i<N-1 && usedGPU()+sz[i+1]>cfg.vram+1e-8 && where[prev]==='gpu' && !candidate.includes(prev)) candidate.push(prev);
+            }
+            let moved=[], discarded=[];
+            for(const j of candidate){
+              if(where[j]!=='gpu') continue;
+              const kind=policy==='adaptive'
+                ? (2*sz[j]/cfg.bandwidth*1000 <= FWD[j]*1.55 ? 'offload' : 'recompute')
+                : policy;
+              if(kind==='offload'){
+                where[j]='cpu';
+                const cost=sz[j]/cfg.bandwidth*1000;
+                transfer+=cost;elapsed+=cost;data+=sz[j];moved.push(j+1);
+              } else {
+                where[j]='discarded';discarded.push(j+1);
+              }
+            }
+            if(moved.length) description+=` A${moved.join('、A')} 已 Offload 到 CPU。`;
+            if(discarded.length) description+=` A${discarded.join('、A')} 已釋放，稍後以 Recompute 取得。`;
+          }
+          snapshot(i+1,`Forward ${n} / 6｜${LABELS[i]}`,description,predicted);
+        }
+        for(let i=N-1;i>=0;i--){
+          const n=i+1;
+          const before=usedGPU();
+          const predicted=before+(where[i]==='gpu'?0:sz[i]);
+          if(predicted>cfg.vram+1e-8){
+            failed=true;
+            snapshot(6+(N-i),`OOM！Backward ${n} 無法執行`,`需要 ${fmt(predicted)}，超過 GPU 上限 ${fmt(cfg.vram)}。`,predicted,true);
+            return trace;
+          }
+          let description=`Backward ${n} 使用 A${n}，計算完成後釋放該 Activation。`;
+          if(where[i]==='cpu'){
+            const cost=sz[i]/cfg.bandwidth*1000;
+            transfer+=cost;elapsed+=cost;data+=sz[i];
+            description=`先將 A${n}（${fmt(sz[i])}）從 CPU Prefetch 回 GPU，再執行 Backward ${n}，完成後釋放。`;
+          } else if(where[i]==='discarded'){
+            const cost=FWD[i]*1.55;
+            recompute+=cost;elapsed+=cost;
+            description=`先 Recompute A${n}（額外 ${ms(cost)}），再執行 Backward ${n}，完成後釋放。`;
+          }
+          where[i]='gpu';
+          elapsed+=BWD[i];
+          where[i]='done';
+          snapshot(6+(N-i),`Backward ${n} / 6｜${LABELS[i]}`,description,predicted,i===0);
+        }
+        return trace;
+      }
+      function syncControls(){
+        $('vram').value=settings.vram;
+        $('batch').value=settings.batch;
+        $('bandwidth').value=settings.bandwidth;
+        $('vram-value').textContent=`${settings.vram} GB`;
+        $('batch-value').textContent=`${settings.batch}×`;
+        $('bandwidth-value').textContent=`${settings.bandwidth} GB/s`;
+        $('policy-help').textContent=POLICY_TEXT[settings.policy];
+        document.querySelectorAll('[data-policy]').forEach(btn=>{
+          const active=btn.dataset.policy===settings.policy;
+          btn.classList.toggle('active',active);
+          btn.setAttribute('aria-pressed',String(active));
+        });
+      }
+      function pause(){
+        if(playTimer!==null){window.clearInterval(playTimer);playTimer=null;}
+        $('play').textContent='▶ 自動播放';
+      }
+      function recreate(){
+        pause();savePrefs();syncControls();history=buildTrace(settings.policy,settings);cursor=0;render();
+      }
+      function changeSettings(part){settings={...settings,...part};recreate();}
+      function advance(){if(cursor<history.length-1){cursor++;render();}if(cursor===history.length-1) pause();}
+      function togglePlay(){
+        if(playTimer!==null){pause();return;}
+        if(cursor>=history.length-1) cursor=0;
+        $('play').textContent='Ⅱ 暫停播放';
+        advance();
+        if(cursor<history.length-1) playTimer=window.setInterval(advance,850);
+      }
+      function chipState(s, phase){return (s.location||[]).map((p,i)=>({p,i,kind:p==='cpu'?'cpu':p==='discarded'?'discarded':p==='gpu'?'gpu':p==='done'?'done':''}));}
+      function render(){
+        const s=history[cursor];
+        $('stat-peak').innerHTML=`${round(s.peak)} <span class="muted-unit">/ ${settings.vram} GB</span>`;
+        $('stat-cpu').innerHTML=`${round(s.cpu)} <span class="muted-unit">GB</span>`;
+        $('stat-data').innerHTML=`${round(s.data,2)} <span class="muted-unit">GB</span>`;
+        $('stat-time').innerHTML=`${Math.round(s.elapsed).toLocaleString('en-US')} <span class="muted-unit">ms</span>`;
+        $('gpu-used').textContent=`${round(s.gpu)} / ${settings.vram} GB`;
+        $('cpu-used').textContent=fmt(s.cpu);
+        $('model-block').style.width=`${Math.min(100,BASE/settings.vram*100)}%`;
+        $('activation-block').style.width=`${Math.max(0,Math.min(100,(s.gpu-BASE)/settings.vram*100))}%`;
+        const cpuMax=total(sizesFor(settings.batch));
+        $('cpu-block').style.width=`${cpuMax?Math.max(0,s.cpu/cpuMax*100):0}%`;
+        $('step-head').textContent=s.title;
+        $('step-description').textContent=s.description;
+        const status=$('sim-status');
+        status.className='status'+(s.failed?' error':s.ended?' done':'');
+        status.innerHTML=`<span class="dot" aria-hidden="true"></span> ${s.failed?'記憶體不足':s.ended?'訓練完成':cursor===0?'尚未開始':`第 ${cursor} / 12 步`}`;
+        const tokens=$('layer-tokens');tokens.replaceChildren();
+        s.location.forEach((p,i)=>{
+          const el=document.createElement('span');el.className=`token ${p==='none'?'':p}`;
+          el.title=`${LABELS[i]}：${p==='none'?'尚未產生':p==='gpu'?'保留在 GPU':p==='cpu'?'Offload 至 CPU':p==='discarded'?'等待 Recompute':'已完成 Backward'}`;
+          const ico={none:'○',gpu:'●',cpu:'⇄',discarded:'↻',done:'✓'}[p];
+          el.textContent=`${ico} A${i+1}`;tokens.appendChild(el);
+        });
+        const timeline=$('timeline');timeline.replaceChildren();
+        for(let k=1;k<=12;k++){
+          const btn=document.createElement('button');btn.type='button';
+          btn.className=`time-chip ${k<=6?'fwd':'bwd'}${k<=s.stage?' filled':''}${cursor>0 && history[cursor].stage===k?' current':''}`;
+          btn.textContent=k<=6?`F${k}`:`B${13-k}`;
+          btn.title=k<=6?`Forward ${k}`:`Backward ${13-k}`;
+          const found=history.findIndex(item=>item.stage===k);
+          btn.disabled=found<0 || found>cursor;
+          btn.addEventListener('click',()=>{pause();cursor=found;render();});
+          timeline.appendChild(btn);
+        }
+        const barWrap=$('chart-bars');barWrap.replaceChildren();
+        for(let k=1;k<=12;k++){
+          const item=history.find(v=>v.stage===k && k<=s.stage);
+          const wrap=document.createElement('div');wrap.className='bar-wrap';
+          const bar=document.createElement('div');bar.className=`bar ${k>6?'bwd':''} ${item&&item.failed?'failed':''} ${item&&item.stage===s.stage?'current':''}`;
+          const h=item?Math.max(3,item.stepPeak/Math.max(settings.vram,item.stepPeak)*100):1;
+          bar.style.height=`${h}%`;
+          const stepName=k<=6?`FWD ${k}`:`BWD ${13-k}`;
+          wrap.title=item?`${stepName}：${fmt(item.stepPeak)}${item.failed?'（OOM）':''}`:`${stepName}：尚未執行`;
+          wrap.appendChild(bar);barWrap.appendChild(wrap);
+        }
+        const tags=[`本步峰值 ${fmt(s.stepPeak)}`, `累計傳輸時間 ${ms(s.transfer)}`,`額外重新計算 ${ms(s.recompute)}`];
+        $('live-note').textContent=tags.join(' · ');
+        $('step').disabled=cursor>=history.length-1;
+        $('play').textContent=playTimer!==null?'Ⅱ 暫停播放':'▶ 自動播放';
+        updateCompare();
+      }
+      function updateCompare(){
+        const tbody=$('compare-body');tbody.replaceChildren();
+        for(const policy of Object.keys(POLICY_NAMES)){
+          const trace=buildTrace(policy,settings);
+          const end=trace[trace.length-1];
+          const tr=document.createElement('tr');
+          if(policy===settings.policy)tr.className='selected';
+          tr.tabIndex=0;tr.setAttribute('role','button');
+          tr.setAttribute('aria-label',`使用 ${POLICY_NAMES[policy]} 策略`);
+          const cells=[`<span class="pill-kind">${POLICY_NAMES[policy]}</span>`,fmt(end.peak),fmt(end.data),end.failed?'—':ms(end.elapsed),`<span class="${end.failed?'result-bad':'result-good'}">${end.failed?'● OOM':'✓ 成功'}</span>`];
+          cells.forEach(html=>{const td=document.createElement('td');td.innerHTML=html;tr.appendChild(td);});
+          const select=()=>{if(settings.policy!==policy)changeSettings({policy});};
+          tr.addEventListener('click',select);
+          tr.addEventListener('keydown',(event)=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select();}});
+          tbody.appendChild(tr);
+        }
+      }
+      ['vram','batch','bandwidth'].forEach(name=>{
+        $(name).addEventListener('input',(event)=>changeSettings({[name]:Number(event.target.value)}));
+      });
+      document.querySelectorAll('[data-policy]').forEach(btn=>btn.addEventListener('click',()=>changeSettings({policy:btn.dataset.policy})));
+      $('step').addEventListener('click',()=>{pause();advance();});
+      $('reset').addEventListener('click',()=>{pause();cursor=0;render();});
+      $('play').addEventListener('click',togglePlay);
+      $('demo-oom').addEventListener('click',()=>changeSettings({vram:8,batch:2,bandwidth:16,policy:'retain'}));
+      $('demo-save').addEventListener('click',()=>changeSettings({vram:8,batch:2,bandwidth:16,policy:'offload'}));
+      document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});
+      recreate();
+    })();
+  </script>
+</body>
+</html>
